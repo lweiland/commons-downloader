@@ -8,3 +8,4 @@ release.properties
 .settings
 .classpath
 dependency-reduced-pom.xml
+/bin/

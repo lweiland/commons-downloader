@@ -1,13 +1,17 @@
 package commonsdl;
 
 import java.io.BufferedOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.io.ObjectInputStream.GetField;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 import org.apache.http.HttpResponse;
@@ -23,6 +27,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.StructuredDataMessage;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
+import org.kohsuke.args4j.spi.OptionHandler;
 
 import commonsdl.Download.Mode;
 
@@ -47,8 +52,9 @@ public final class CommonsDownloader {
 	public void download() throws IOException {
 		this.client.start();
 		try {
+			
 			final int lines = (int) Files.lines(download.getFile(), download.getCharset()).count();
-			LOGGER.info("Will download {} files", lines);
+			//LOGGER.info("Will download {} files", lines);
 			this.latch = new CountDownLatch(lines);
 			Files.lines(download.getFile(), download.getCharset())
 				.parallel()
@@ -68,6 +74,33 @@ public final class CommonsDownloader {
 		}
 	}
 	
+	
+	public void download(String file, String destination) throws IOException {
+		this.client.start();
+		try {
+					
+			final int lines = (int) Files.lines(Paths.get(file), download.getCharset()).count();
+			//LOGGER.info("Will download {} files", lines);
+			this.latch = new CountDownLatch(lines);
+			Files.lines(Paths.get(file), download.getCharset())
+				.parallel()
+				.map(s -> s.substring(0, s.lastIndexOf(',')))
+				.forEach(s -> this.download(s, Paths.get(destination)));
+			try {
+				LOGGER.info("Waiting for downloads to complete");
+				latch.await();
+			} catch (final InterruptedException e) {
+				Thread.interrupted();
+			}
+		} catch (final Throwable t) {
+			LOGGER.error("Oups", t);
+		} finally {
+			LOGGER.info("All done");
+			this.client.close();
+		}
+	}
+	
+	
 	private void download(final String fileName, final Path destination) {
 		final StructuredDataMessage event = new StructuredDataMessage(Integer.toHexString(fileName.hashCode()) , null, "download");
 		final Path destinationFile = Paths.get(destination.toString(), fileName.replaceAll("[:*?\"<>|/\\\\]", "_"));
@@ -75,7 +108,7 @@ public final class CommonsDownloader {
 		if (download.getMode() == Mode.RESTART || !destinationFile.toFile().exists()) {
 			try {
 				final URI uri = new URIBuilder(commons).addParameter("file", fileName).build();
-				event.put("uri", uri.toString());
+				//event.put("uri", uri.toString());
 				final HttpGet request = new HttpGet(uri);
 				client.execute(request, new DownloaderCallback(fileName, destination, event));
 			} catch (final URISyntaxException e) {
@@ -90,15 +123,85 @@ public final class CommonsDownloader {
 			latch.countDown();
 		}
 	}
+	
+	//read folder with txt 
+	//for each txt make threads (until no of threads?)
+	//	make folder to save files
+	
 
 	public static void main(String[] args) {
-		final Download download = new Download();
+		
+		
+		
+		
+		Download download = new Download();
 		final CmdLineParser parser = new CmdLineParser(download);
 		try {
 			parser.parseArgument(args);
-			final CommonsDownloader downloader = new CommonsDownloader(download);
-			downloader.download();
+			
+			boolean folderOption = download.folderSet();
+			
+		/*
+			List<OptionHandler> options = new ArrayList<OptionHandler>(); 
+			System.out.println(download.toString());
+			
+			options = parser.getOptions();
+		
+			for(OptionHandler opt : options){
+				opt.
+				if(opt.toString().contains("folder")){
+					folderOption = true;
+				}
+			}*/
+			if(folderOption){
+				Path path2Fold = download.getFolder();
+				File files = new File(path2Fold.toString());
+				File[] listOfFiles = files.listFiles();
+				//loop over each file in folder 
+				for(int i = 0; i< listOfFiles.length;i++){
+					
+					//mkdir
+					// get folder name
+					String pathTxt = listOfFiles[i].toString();
+					
+											
+					Path dest = download.getDestination();
+					
+					//TODO: add os 
+					String delim = "/";
+					if(dest.toString().contains("C:") || dest.toString().contains("D:")){
+						delim="\\";
+					}
+					
+					String folderName = pathTxt.substring(pathTxt.lastIndexOf(delim)+1, pathTxt.lastIndexOf(".txt"));
+				
+					
+					
+					
+					String destPath = dest.toString()+"/"+folderName+"/";
+					File d = new File(destPath);
+					if(!d.exists()){
+						d.mkdir();
+					}
+					
+					
+					
+					final CommonsDownloader downloader = new CommonsDownloader(download);
+					//TODO add max number of threads
+					DownloadThread dt = new DownloadThread("thread"+i,downloader, download, 
+							listOfFiles[i].toString(), destPath);
+					dt.start();
+				}
+		
+
+			}else{
+				
+			
+				final CommonsDownloader downloader = new CommonsDownloader(download);
+				downloader.download();
+			}
 		} catch (final CmdLineException e) {
+			e.printStackTrace();
 			parser.printUsage(System.out);
 		} catch (final URISyntaxException | IOException e) {
 			System.err.printf("Could not open file: %1$s.", e.getMessage());
@@ -113,10 +216,12 @@ public final class CommonsDownloader {
 		
 		private final StructuredDataMessage event;
 		
+		
 		public DownloaderCallback(final String fileName, final Path destination, final StructuredDataMessage event) {
 			this.fileName = fileName;
 			this.destination = destination;
 			this.event = event;
+			
 		}
 		
 		@Override
@@ -132,8 +237,8 @@ public final class CommonsDownloader {
 			final Path destinationFile = getDestinationFile();
 			try (final BufferedOutputStream os = new BufferedOutputStream(Files.newOutputStream(destinationFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE))) {
 				response.getEntity().writeTo(os);
-				event.put("status", "success");
-				EventLogger.logEvent(event, Level.INFO);
+			//	event.put("status", "success");
+			//	EventLogger.logEvent(event, Level.INFO);
 			} catch (final IOException e) {
 				event.put("status", "error");
 				EventLogger.logEvent(event, Level.WARN);
@@ -154,5 +259,51 @@ public final class CommonsDownloader {
 			latch.countDown();
 		}
 	}
+	
+	
+static class DownloadThread extends Thread {
+		   private Thread t;
+		   private String threadName;
+		   CommonsDownloader commonsDow;
+		   Download download;
+		   String fitxt;
+		   String dest;
+		   
+		   DownloadThread(String name, CommonsDownloader commonsDown, Download down, 
+				   String fitxt, String dest) throws URISyntaxException {
+		      threadName = name;
+		      System.out.println("Creating " +  threadName );
+		      commonsDow = commonsDown;
+		      download = down;
+		      this.fitxt = fitxt;
+		      this.dest = dest;
+		      
+		   }
+		   
+		   public void run() {
+		      System.out.println("Running " +  threadName );
+		      try {
+		         //for(int i = 4; i > 0; i--) {
+		          //  System.out.println("Thread: " + threadName + ", " + i);
+		            // Let the thread sleep for a while.
+		           // Thread.sleep(50);
+		        // }
+		    	 commonsDow = new CommonsDownloader(download);
+		    	 commonsDow.download(fitxt, dest);
+		    	  
+		      }catch (Exception e) {
+		         System.out.println("Thread " +  threadName + " interrupted.");
+		      }
+		      System.out.println("Thread " +  threadName + " exiting.");
+		   }
+		   
+		   public void start () {
+		      System.out.println("Starting " +  threadName );
+		      if (t == null) {
+		         t = new Thread (this, threadName);
+		         t.start ();
+		      }
+		   }
+		}
 
 }
