@@ -13,6 +13,9 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -27,7 +30,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.StructuredDataMessage;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
-import org.kohsuke.args4j.spi.OptionHandler;
+
 
 import commonsdl.Download.Mode;
 
@@ -129,7 +132,7 @@ public final class CommonsDownloader {
 	//	make folder to save files
 	
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws InterruptedException {
 		
 		
 		
@@ -140,34 +143,31 @@ public final class CommonsDownloader {
 			parser.parseArgument(args);
 			
 			boolean folderOption = download.folderSet();
-			
-		/*
-			List<OptionHandler> options = new ArrayList<OptionHandler>(); 
-			System.out.println(download.toString());
-			
-			options = parser.getOptions();
-		
-			for(OptionHandler opt : options){
-				opt.
-				if(opt.toString().contains("folder")){
-					folderOption = true;
-				}
-			}*/
+	
 			if(folderOption){
 				Path path2Fold = download.getFolder();
 				File files = new File(path2Fold.toString());
 				File[] listOfFiles = files.listFiles();
+				
+				//overkill - I do not use an unbalanced chuck size as we have a controlled set of files to download
+				//ForkJoinPool forkJoinPool = new ForkJoinPool(24);
+				
+				int poolSize = Runtime.getRuntime().availableProcessors();
+				int jobCount = 30;
+				ExecutorService pool = Executors.newFixedThreadPool(poolSize);
+				System.out.println("poolSize"+poolSize);
 				//loop over each file in folder 
+				
 				for(int i = 0; i< listOfFiles.length;i++){
 					
+				
 					//mkdir
 					// get folder name
 					String pathTxt = listOfFiles[i].toString();
 					
-											
 					Path dest = download.getDestination();
 					
-					//TODO: add os 
+					// add os 
 					String delim = "/";
 					if(dest.toString().contains("C:") || dest.toString().contains("D:")){
 						delim="\\";
@@ -187,12 +187,26 @@ public final class CommonsDownloader {
 					
 					
 					final CommonsDownloader downloader = new CommonsDownloader(download);
+					
+					
 					//TODO add max number of threads
+					
 					DownloadThread dt = new DownloadThread("thread"+i,downloader, download, 
 							listOfFiles[i].toString(), destPath);
+					
 					dt.start();
+					
+					
+					/*
+					ForkJoinPool.commonPool().invoke(new DownloadTask(files, download));
+					forkJoinPool.shutdown();
+					*/
+				
+					
+					
 				}
-		
+				pool.shutdown();
+				while(!pool.isTerminated());
 
 			}else{
 				
@@ -260,8 +274,12 @@ public final class CommonsDownloader {
 		}
 	}
 	
+
+
 	
-static class DownloadThread extends Thread {
+	
+	
+	static class DownloadThread extends Thread {
 		   private Thread t;
 		   private String threadName;
 		   CommonsDownloader commonsDow;
@@ -283,11 +301,7 @@ static class DownloadThread extends Thread {
 		   public void run() {
 		      System.out.println("Running " +  threadName );
 		      try {
-		         //for(int i = 4; i > 0; i--) {
-		          //  System.out.println("Thread: " + threadName + ", " + i);
-		            // Let the thread sleep for a while.
-		           // Thread.sleep(50);
-		        // }
+		       
 		    	 commonsDow = new CommonsDownloader(download);
 		    	 commonsDow.download(fitxt, dest);
 		    	  
@@ -301,7 +315,7 @@ static class DownloadThread extends Thread {
 		      System.out.println("Starting " +  threadName );
 		      if (t == null) {
 		         t = new Thread (this, threadName);
-		         t.start ();
+		         t.start (); //calls the run method
 		      }
 		   }
 		}
