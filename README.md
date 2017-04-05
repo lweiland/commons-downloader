@@ -29,3 +29,8 @@ the images are downloaded in original size
 
 
 ~ takes 30mins for 50,000 images
+
+
+**TODO**
+- add @Option --poolsize for defining the number of threads in ThreadPool (I went back from Runtime.getRuntime().availableProcessors() to a fixed size of 15Threads)
+- additional testing
