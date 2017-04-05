@@ -16,7 +16,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.URIBuilder;
@@ -30,7 +29,6 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.StructuredDataMessage;
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
-
 
 import commonsdl.Download.Mode;
 
@@ -152,10 +150,11 @@ public final class CommonsDownloader {
 				//overkill - I do not use an unbalanced chuck size as we have a controlled set of files to download
 				//ForkJoinPool forkJoinPool = new ForkJoinPool(24);
 				
-				int poolSize = Runtime.getRuntime().availableProcessors();
+				int poolSize = 15;//Runtime.getRuntime().availableProcessors();
 				int jobCount = 30;
 				ExecutorService pool = Executors.newFixedThreadPool(poolSize);
 				System.out.println("poolSize"+poolSize);
+				Thread.sleep(20000);
 				//loop over each file in folder 
 				
 				for(int i = 0; i< listOfFiles.length;i++){
